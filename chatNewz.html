@@ -1,0 +1,267 @@
+<!doctype html>
+<html lang="en">
+<head>
+  <meta charset="utf-8" />
+  <meta name="viewport" content="width=device-width,initial-scale=1" />
+  <title>Advanced News App</title>
+  <style>
+    :root{
+      --bg:#0f1724;--card:#0b1220;--muted:#9aa6bf;--accent:#4f46e5;
+      --text:#e6eef8;
+    }
+    body.light{
+      --bg:#f2f4f7;--card:#ffffff;--muted:#6d7480;--accent:#4338ca;
+      --text:#0b1220;
+      background: #e9edf3;
+    }
+
+    html,body{
+      height:100%;margin:0;font-family:Inter,system-ui;
+      background:var(--bg);color:var(--text);
+    }
+
+    .app{max-width:1100px;margin:32px auto;padding:20px}
+    header{display:flex;justify-content:space-between;align-items:center;flex-wrap:wrap}
+    h1{margin:0;font-size:24px}
+
+    .controls{display:flex;gap:10px;margin-top:14px;flex-wrap:wrap}
+    input,select{
+      background:var(--card);border:1px solid rgba(255,255,255,0.08);
+      padding:10px 12px;border-radius:10px;color:inherit;min-width:150px;
+    }
+    button{
+      background:var(--accent);border:none;color:white;padding:10px 14px;
+      border-radius:10px;cursor:pointer;
+    }
+    button:disabled{opacity:.4;cursor:not-allowed}
+
+    .themeBtn{
+      background:var(--card);color:var(--text);border:1px solid #444;
+    }
+
+    /* GRID */
+    .grid{
+      display:grid;
+      grid-template-columns:repeat(auto-fill,minmax(280px,1fr));
+      gap:16px;margin-top:20px;
+    }
+
+    /* CARD */
+    .card{
+      background:var(--card);
+      padding:12px;border-radius:14px;
+      display:flex;flex-direction:column;gap:8px;
+      box-shadow:0 6px 18px rgba(2,6,23,0.4);
+    }
+    .thumb{
+      width:100%;height:160px;object-fit:cover;border-radius:10px;
+    }
+
+    /* Skeleton Loader */
+    .skeleton{
+      background:rgba(255,255,255,0.08);
+      height:200px;border-radius:12px;
+      animation:pulse 1.4s infinite;
+    }
+    @keyframes pulse{
+      0%{opacity:0.4}
+      50%{opacity:1}
+      100%{opacity:0.4}
+    }
+
+    .footer{display:flex;justify-content:space-between;align-items:center}
+    .meta{font-size:12px;color:var(--muted)}
+    .saveBtn{cursor:pointer;color:gold;font-size:18px}
+  </style>
+</head>
+<body>
+  <div class="app">
+    <header>
+      <h1>Advanced News App</h1>
+      <button class="themeBtn" id="themeToggle">🌙/☀️</button>
+    </header>
+
+    <div class="controls">
+      <input id="q" type="text" placeholder="Search..." />
+      <select id="country">
+        <option value="us">USA</option>
+        <option value="in">India</option>
+        <option value="gb">UK</option>
+      </select>
+      <select id="category">
+        <option value="">All</option>
+        <option value="business">Business</option>
+        <option value="sports">Sports</option>
+        <option value="technology">Tech</option>
+      </select>
+      <button id="searchBtn">Search</button>
+    </div>
+
+    <div id="status"></div>
+    <main id="articles" class="grid"></main>
+
+    <button id="retryBtn" style="display:none;margin-top:20px;">Retry</button>
+  </div>
+
+<script>
+const API_KEY = "1ee16ba1009849aab1f70a7efaa12f72";
+const TOP_URL = "https://newsapi.org/v2/top-headlines";
+const SEARCH_URL = "https://newsapi.org/v2/everything";
+
+let page = 1;
+let lastQuery = {};
+let loading = false;
+let total = 0;
+
+const qEl = document.getElementById("q");
+const countryEl = document.getElementById("country");
+const categoryEl = document.getElementById("category");
+const searchBtn = document.getElementById("searchBtn");
+const statusEl = document.getElementById("status");
+const articlesEl = document.getElementById("articles");
+const retryBtn = document.getElementById("retryBtn");
+
+// ---------------------- SAVE BOOKMARK FUNCTION ----------------------
+function saveArticle(article){
+  let saved = JSON.parse(localStorage.getItem("savedNews") || "[]");
+  saved.push(article);
+  localStorage.setItem("savedNews", JSON.stringify(saved));
+  alert("Saved!");
+}
+
+// ---------------------- LOADING SKELETON ----------------------
+function renderSkeleton(count=6){
+  articlesEl.innerHTML = "";
+  for(let i=0;i<count;i++){
+    let sk = document.createElement("div");
+    sk.className="skeleton";
+    articlesEl.appendChild(sk);
+  }
+}
+
+// ---------------------- FETCH NEWS ----------------------
+async function fetchNews({page=1,q="",country="us",category=""}){
+  loading = true;
+  retryBtn.style.display="none";
+  renderSkeleton();
+
+  const params = new URLSearchParams({pageSize:12,page,apiKey:API_KEY});
+  let url;
+
+  if(q){
+    url = SEARCH_URL;
+    params.append("q",q);
+    params.append("language","en");
+  } else {
+    url = TOP_URL;
+    params.append("country",country);
+    if(category) params.append("category",category);
+  }
+
+  try{
+    const res = await fetch(`${url}?${params.toString()}`);
+    const data = await res.json();
+    if(data.status!=="ok") throw new Error(data.message);
+    
+    total = data.totalResults;
+    statusEl.textContent = `Showing page ${page} of ${Math.ceil(total/12)}`;
+
+    return data.articles;
+
+  } catch(err){
+    statusEl.textContent = "Network error!";
+    retryBtn.style.display="block";
+    return [];
+  } finally {
+    loading = false;
+  }
+}
+
+// ---------------------- RENDER ----------------------
+function renderArticles(list,append=false){
+  if(!append) articlesEl.innerHTML = "";
+
+  list.forEach(a=>{
+    const card=document.createElement("div");
+    card.className="card";
+
+    const img=document.createElement("img");
+    img.className="thumb";
+    img.src = a.urlToImage || "";
+    img.onerror=()=>{img.style.display="none"};
+
+    const title=document.createElement("div");
+    title.textContent=a.title;
+
+    const desc=document.createElement("div");
+    desc.textContent=a.description || "";
+
+    const meta=document.createElement("div");
+    meta.className="meta";
+    meta.textContent = `${a.source.name} • ${new Date(a.publishedAt).toLocaleString()}`;
+
+    const save=document.createElement("div");
+    save.className="saveBtn";
+    save.textContent="⭐";
+    save.onclick=()=>saveArticle(a);
+
+    const link=document.createElement("a");
+    link.href=a.url;
+    link.target="_blank";
+    link.textContent="Read";
+
+    const footer=document.createElement("div");
+    footer.className="footer";
+    footer.append(meta,link,save);
+
+    card.append(img,title,desc,footer);
+    articlesEl.appendChild(card);
+  });
+}
+
+// ---------------------- SEARCH LOGIC ----------------------
+async function doSearch(reset=true){
+  if(reset) page=1;
+
+  lastQuery = {
+    q:qEl.value.trim(),
+    country:countryEl.value,
+    category:categoryEl.value
+  };
+
+  localStorage.setItem("lastQuery",JSON.stringify(lastQuery));
+
+  const list = await fetchNews({page,...lastQuery});
+  renderArticles(list,!reset);
+}
+
+searchBtn.onclick = ()=>doSearch(true);
+retryBtn.onclick = ()=>doSearch(false);
+
+// ---------------------- INFINITE SCROLL ----------------------
+window.addEventListener("scroll", async ()=>{
+  if(loading) return;
+  if(window.innerHeight + window.scrollY >= document.body.scrollHeight - 200){
+    page++;
+    await doSearch(false);
+  }
+});
+
+// ---------------------- THEME TOGGLE ----------------------
+document.getElementById("themeToggle").onclick = ()=>{
+  document.body.classList.toggle("light");
+};
+
+// ---------------------- RESTORE LAST QUERY ----------------------
+const saved = localStorage.getItem("lastQuery");
+if(saved){
+  const q=JSON.parse(saved);
+  qEl.value=q.q;
+  countryEl.value=q.country;
+  categoryEl.value=q.category;
+}
+
+doSearch(true);
+</script>
+</body>
+</html>
